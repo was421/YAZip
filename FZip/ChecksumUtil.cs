@@ -6,7 +6,6 @@ namespace FZip
 {
     public static class ChecksumUtil
     {
-
         //Modified https://makolyte.com/csharp-get-a-files-checksum-using-any-hashing-algorithm-md5-sha256/
         public static string GetChecksum(string filename)
         {
@@ -23,7 +22,7 @@ namespace FZip
         public static void CheckFiles()
         {
             var filePath = @"C:\Users\Tor\Desktop\DARK SOULS PREPARE TO DIE EDITION";
-            var dsRepack = @"C:\Users\Tor\source\repos\BHDPacker\BHDPacker\bin\Debug\DARK SOULS PREPARE TO DIE EDITION";
+            var dsRepack = @"C:\Users\Tor\source\repos\FZip\FZip\bin\Debug\DARK SOULS PREPARE TO DIE EDITION";
             var ogFiles = Directory.GetFiles(filePath, "*", SearchOption.AllDirectories);
             var reFiles = Directory.GetFiles(dsRepack, "*", SearchOption.AllDirectories);
             var good = 0;
