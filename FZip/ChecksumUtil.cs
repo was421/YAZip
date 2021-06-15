@@ -6,6 +6,8 @@ namespace FZip
 {
     public static class ChecksumUtil
     {
+
+
         //Modified https://makolyte.com/csharp-get-a-files-checksum-using-any-hashing-algorithm-md5-sha256/
         public static string GetChecksum(string filename)
         {
