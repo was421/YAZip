@@ -27,6 +27,13 @@ namespace YAZip
         /// <returns>Error string</returns>
         public static string Unpack(string filePath, string password, string destination, IProgress<(double value, string status)> progress)
         {
+            if (!string.IsNullOrWhiteSpace(password))
+            {
+                if (Settings.Instance.ds3comply)
+                    CryptoUtil.DecryptBHD_RSA(filePath, password);
+                return null;
+            }
+
             progress.Report((0, "Preparing to unpack..."));
             string fileDir = Path.GetDirectoryName(filePath);
             if (string.IsNullOrWhiteSpace(destination))

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 
 namespace YAZip
@@ -60,6 +61,15 @@ namespace YAZip
 
             Console.WriteLine($"Match: {good}");
             Console.WriteLine($"Mismatch: {bad}");
+        }
+
+        private const uint PRIME = 37;
+        public static uint ComputeHash(string path)
+        {
+            string hashable = path.Trim().Replace('\\', '/').ToLowerInvariant();
+            if (!hashable.StartsWith("/"))
+                hashable = '/' + hashable;
+            return hashable.Aggregate(0u, (i, c) => i * PRIME + c);
         }
     }
 

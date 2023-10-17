@@ -37,6 +37,15 @@ namespace YAZip
 
             foreach (var arg in args)
             {
+                if (arg.StartsWith("-"))
+                {
+                    bool ds3comply = arg.Equals("-DS3Comply");
+                    Settings.Instance.ds3comply = ds3comply;
+                    if (ds3comply)
+                        Console.WriteLine("Using DS3 Compliant Mode");
+                    continue;
+                }
+
                 var writePath = Directory.GetParent(arg).ToString();
                 string error;
                 FileAttributes attr = File.GetAttributes(arg);
