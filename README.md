@@ -1,3 +1,5 @@
+# THIS FORK IS NOT STABLE PLEASE NORDGAREN's VERSION FOR THE TIME BEING!
+
 # YAZip
 ### Yet Another Zip
 Made by Nordgaren  
