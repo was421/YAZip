@@ -34,12 +34,12 @@ namespace YAZip
             var watch = new System.Diagnostics.Stopwatch();
             watch.Start();
             Progress = new Progress<(double value, string status)>(ProgressReport);
-
+            bool ds3comply = false;
             foreach (var arg in args)
             {
                 if (arg.StartsWith("-"))
                 {
-                    bool ds3comply = arg.Equals("-DS3Comply");
+                    ds3comply = arg.Equals("-DS3Comply");
                     Settings.Instance.ds3comply = ds3comply;
                     if (ds3comply)
                         Console.WriteLine("Using DS3 Compliant Mode");
@@ -53,11 +53,14 @@ namespace YAZip
 
                 if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
                 {
-                    var encryptBHD = Confirm("Would you like to password protect these files?");
-                    if (encryptBHD)
+                    if (ds3comply)
                     {
-                        Console.Write("Please choose a password: ");
-                        password = Console.ReadLine();
+                        var encryptBHD = Confirm("Would you like to password protect these files?");
+                        if (encryptBHD)
+                        {
+                            Console.Write("Please choose a password: ");
+                            password = Console.ReadLine();
+                        }
                     }
 
                     error = Packer.Pack(arg, writePath, password, Progress);
