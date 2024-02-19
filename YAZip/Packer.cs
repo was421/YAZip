@@ -214,7 +214,6 @@ namespace YAZip
 
                     bool skipFile = false;
                     var checkStatement = $"SELECT fileHash FROM \"patch\" WHERE fileNameHash = {(int)FileNameHash} ORDER BY layer DESC";
-                    Console.WriteLine(checkStatement);
                     var checkCommand = new SQLiteCommand(checkStatement, db);
                     var checkCommandResults = checkCommand.ExecuteReader();
                     if (checkCommandResults.Read())
@@ -226,11 +225,13 @@ namespace YAZip
                     if (skipFile)
                     {
                         progress.Report((((double)(currentFile) / fileCount),$"{hashPath} is unchanged, skipping..."));
+                        var insertSkipCommand = $"INSERT INTO \"patch\" (fileNameHash,fileName,layer,fileHash) VALUES ({(int)FileNameHash},\"{hashPath}\",{patchLayer * -1},{(int)FileHash})";
+                        var includedSkipFileCommand = new SQLiteCommand(insertSkipCommand, db);
+                        includedSkipFileCommand.ExecuteReader();
                         continue;
                     }
 
                     var insertCommand = $"INSERT INTO \"patch\" (fileNameHash,fileName,layer,fileHash) VALUES ({(int)FileNameHash},\"{hashPath}\",{patchLayer},{(int)FileHash})";
-
                     var includedFileCommand = new SQLiteCommand(insertCommand, db);
                     includedFileCommand.ExecuteReader();
 
@@ -273,6 +274,21 @@ namespace YAZip
                                 $"Packing {headerPath} ({currentFile}/{fileCount}) bucket[{hashIndex}]({hashPath})[{header.FileNameHash}]..."));
                     
                     bdtStream.Write(bytes, 0, bytes.Length);
+                }
+
+                //Do Deleted File Check
+                var deletedFileCheckQuery = $"SELECT DISTINCT fileNameHash FROM patch where layer < {patchLayer} and layer >= 0 and fileNameHash NOT IN (SELECT fileNameHash FROM patch where layer = {patchLayer} or layer = {patchLayer} * -1);";
+                var deletedFileCheck = new SQLiteCommand(deletedFileCheckQuery, db);
+                var deletedFileCheckResults = deletedFileCheck.ExecuteReader();
+                while (deletedFileCheckResults.Read())
+                {
+                    //These are dummy entries to indicate that a file has been removed and shouldn't be looked for
+                    var headerHash = (uint)deletedFileCheckResults.GetInt32(0);
+                    var hashIndex = headerHash % buckets.Length;
+                    var header = new BHD5.FileHeader();
+                    header.FileNameHash = headerHash;
+                    header.PaddedFileSize = -1;
+                    buckets[hashIndex].Add(header);
                 }
 
                 //var shuffled = bucket.OrderBy(x => Guid.NewGuid()).ToList(); //Shuffles the bucket before adding it to bhd.
