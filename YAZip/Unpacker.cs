@@ -147,7 +147,7 @@ namespace YAZip
                             filePaths = JsonConvert.DeserializeObject<List<string>>(Encoding.ASCII.GetString(jsonBytes));
                         }
 
-                        var archiveDictionary = new Dictionary<uint, string>();
+                        var archiveDictionary = new Dictionary<ulong, string>();
 
                         if (filePaths != null)
                         {

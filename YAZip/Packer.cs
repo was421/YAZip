@@ -3,8 +3,13 @@ using SoulsFormats;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Hashing;
+using System.IO.MemoryMappedFiles;
+using System.Collections.Concurrent;
+using System.Threading.Tasks;
 using System.Linq;
 using System.Text;
+using System.Data.SQLite;
 
 namespace YAZip
 {
@@ -20,6 +25,52 @@ namespace YAZip
         /// <returns>Error string</returns>
         public static string Pack(string filePath, string writePath, string password, IProgress<(double value, string status)> progress)
         {
+            string databaseFileName = "patches.db3";
+            string databasePath = Path.Combine(Directory.GetCurrentDirectory(), databaseFileName);
+
+            // Check if the database file exists
+            if (!File.Exists(databasePath))
+            {
+                // If the database file doesn't exist, create it
+                SQLiteConnection.CreateFile(databasePath);
+                Console.WriteLine($"Database '{databaseFileName}' created successfully!");
+            }
+
+            string connectionString = $"Data Source={databasePath};";
+            var db  = new SQLiteConnection(connectionString);
+            db.Open();
+            var globalTableStatement =
+                "CREATE TABLE IF NOT EXISTS \"global\"(" +
+                "\"id\" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE,"+
+                "\"layer\" INTEGER NOT NULL DEFAULT 0 )";
+            var globalTableCommand = new SQLiteCommand(globalTableStatement, db);
+            globalTableCommand.ExecuteReader();
+
+            int patchLayer = 0;
+            var getLayerCommand = new SQLiteCommand("SELECT layer FROM \"global\" LIMIT 1", db);
+            var queryResults = getLayerCommand.ExecuteReader();
+            if (queryResults.Read())
+            {
+                patchLayer = queryResults.GetInt32(0) + 1;
+                var updateGlobal = new SQLiteCommand($"UPDATE \"global\" SET layer = {patchLayer} WHERE id = 0;", db);
+                updateGlobal.ExecuteReader();
+            }
+            else
+            {
+                var populateGlobal = new SQLiteCommand("INSERT INTO \"global\" VALUES(0,0)", db);
+                populateGlobal.ExecuteReader();
+            }
+
+            var patchTableStatement =
+                "CREATE TABLE IF NOT EXISTS \"patch\" (" +
+                "\"id\"    INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT UNIQUE," +
+                "\"fileNameHash\"  INTEGER NOT NULL," +
+                "\"fileName\"  TEXT NOT NULL," +
+                "\"layer\" INTEGER NOT NULL," +
+                "\"fileHash\"  INTEGER NOT NULL)";
+            var patchTableCommand = new SQLiteCommand(patchTableStatement, db);
+            patchTableCommand.ExecuteReader();
+
             List<int> hashes = new List<int>();
             var bhdWriter = new BHD5(BHD5.Game.DarkSouls3);
             bhdWriter.Unk05 = true;
@@ -27,9 +78,14 @@ namespace YAZip
             var fileList = new List<string>();
             var fileDir = Directory.GetParent(filePath);
             var fileName = filePath.Replace($"{fileDir}\\", "");
+            var BhdBdtPairName = fileName;
+            if(patchLayer != 0)
+            {
+                BhdBdtPairName = $"{BhdBdtPairName}_patch_{patchLayer.ToString("00")}";
+            }
 
-            string pathBDT = $@"{writePath}\{fileName}.bdt";
-            string pathBHD = $@"{writePath}\{fileName}.bhd";
+            string pathBDT = $@"{writePath}\{BhdBdtPairName}.bdt";
+            string pathBHD = $@"{writePath}\{BhdBdtPairName}.bhd";
 
             if (pathBDT.Contains(".Encrypt"))
             {
@@ -52,12 +108,53 @@ namespace YAZip
                 return null;
             }
 
+
             if (File.Exists(pathBDT))
                 File.Delete(pathBDT);
+            if (File.Exists(pathBHD))
+                File.Delete(pathBHD);
 
-            
+
+            string[] files;
             var folders = Directory.GetDirectories(filePath);
-            int fileCount = Directory.GetFiles(filePath, "*", SearchOption.AllDirectories).Length;
+            string[] excludedFolders = { "sound", "movie", "yarr", "DRAG CONTENTS INTO GAME FOLDER" };
+            string[] pendingFileList = Directory.GetFiles(filePath, "*", SearchOption.TopDirectoryOnly);
+            foreach (var folder in folders)
+            {
+                files = Directory.GetFiles(folder, "*", SearchOption.AllDirectories);
+                pendingFileList = pendingFileList.Concat(files).ToArray();
+
+            }
+            ConcurrentBag<(string,uint)> masterFileList = new ConcurrentBag<(string, uint)>();
+            Parallel.ForEach(pendingFileList, (file) =>  
+            {
+                string folderName = Path.GetDirectoryName(file).ToLower();
+                if (excludedFolders.Any(folder => folderName.Contains(folder.ToLower())))
+                {
+                    return;
+                }
+                try
+                {
+                    var mmf = MemoryMappedFile.CreateFromFile(file);
+                    var mmfStream = mmf.CreateViewStream();
+
+                    var crc32Hash = new Crc32();
+                    crc32Hash.Append(mmfStream);
+                    var FileHash = crc32Hash.GetCurrentHashAsUInt32();
+
+                    mmfStream.Close();
+                    mmf.Dispose();
+
+                    masterFileList.Add((file, FileHash));
+                }catch(Exception e)
+                {
+                    Console.WriteLine($"MMFile:{file}: Is Probs Zero");
+                    masterFileList.Add((file, 0));
+                }
+            });
+
+            int fileCount = masterFileList.Count;
+
             Console.WriteLine("Finding Prime");
             bool IsPrime = false;
             int prime = fileCount;
@@ -77,7 +174,7 @@ namespace YAZip
             } while (!IsPrime);
             prime++;
             Console.WriteLine($"Buckets:{prime}");
-            string[] files;
+            
             BHD5.Bucket[] buckets = new BHD5.Bucket[prime];
             for (int i = 0; i < buckets.Length; i++)
             {
@@ -87,24 +184,15 @@ namespace YAZip
             using (FileStream bhdStream = File.Create(pathBHD))
             using (var bdtStream = new FileStream(pathBDT, FileMode.Append))
             {
-                string[] excludedFolders = { "sound", "movie", "yarr", "DRAG CONTENTS INTO GAME FOLDER" };
-                string[] masterFileList = Directory.GetFiles(filePath, "*", SearchOption.TopDirectoryOnly);
-                foreach (var folder in folders)
+                foreach (var pair in masterFileList)
                 {
-                    files = Directory.GetFiles(folder, "*", SearchOption.AllDirectories);
-                    masterFileList = masterFileList.Concat(files).ToArray();
+                    var file = pair.Item1;
+                    var FileHash = pair.Item2;
 
-                }
-                foreach (var file in masterFileList)
-                {
-                    string folderName = Path.GetDirectoryName(file).ToLower();
-                    if(excludedFolders.Any(folder => folderName.Contains(folder.ToLower())))
-                    {
-                        continue;
-                    }
                     currentFile++;
-                    byte[] bytes;
 
+                    
+                    byte[] bytes;
                     try
                     {
                         bytes = File.ReadAllBytes(file);
@@ -116,7 +204,36 @@ namespace YAZip
 
                     var headerPath = file.Replace(fileDir.ToString(), "");
                     var hashPath = headerPath.Replace($"\\{fileName}", "").Replace("\\", "/");
+                    var FileNameHash = SFUtil.FromPathHash(hashPath);
                     var headerHash = ChecksumUtil.ComputeHash(hashPath);
+                    
+
+                    /*
+                     * SQLITE CHECK
+                     */
+
+                    bool skipFile = false;
+                    var checkStatement = $"SELECT fileHash FROM \"patch\" WHERE fileNameHash = {(int)FileNameHash} ORDER BY layer DESC";
+                    Console.WriteLine(checkStatement);
+                    var checkCommand = new SQLiteCommand(checkStatement, db);
+                    var checkCommandResults = checkCommand.ExecuteReader();
+                    if (checkCommandResults.Read())
+                    {
+                        Console.WriteLine($"{FileHash} = {(uint)checkCommandResults.GetInt32(0)}");
+                        skipFile = (FileHash == (uint)checkCommandResults.GetInt32(0));
+                    }
+
+                    if (skipFile)
+                    {
+                        progress.Report((((double)(currentFile) / fileCount),$"{hashPath} is unchanged, skipping..."));
+                        continue;
+                    }
+
+                    var insertCommand = $"INSERT INTO \"patch\" (fileNameHash,fileName,layer,fileHash) VALUES ({(int)FileNameHash},\"{hashPath}\",{patchLayer},{(int)FileHash})";
+
+                    var includedFileCommand = new SQLiteCommand(insertCommand, db);
+                    includedFileCommand.ExecuteReader();
+
                     var hashIndex = headerHash % buckets.Length;
                     bool compress = headerPath.Contains(".DCX");
                     if (compress)
@@ -146,7 +263,7 @@ namespace YAZip
                     //header.SHAHash.Ranges.Add(new BHD5.Range(0, bytes.Length));
                     //header.SHAHash.Ranges.Add(new BHD5.Range(-1, -1));
                     //header.SHAHash.Ranges.Add(new BHD5.Range(-1, -1));
-                    header.FileNameHash = SFUtil.FromPathHash(hashPath);
+                    header.FileNameHash = FileNameHash;
                     hashes.Add(header.FileNameHash.GetHashCode());
                     header.FileOffset = bdtStream.Length;
                     header.PaddedFileSize = bytes.Length;
@@ -175,6 +292,8 @@ namespace YAZip
             }
 
             FindCollisions(hashes.ToArray());
+
+            db.Close();
 
             progress.Report(((1, $"Packing complete!")));
             return null;
@@ -228,7 +347,6 @@ namespace YAZip
                 }
             }
         }
-
 
     }
 }

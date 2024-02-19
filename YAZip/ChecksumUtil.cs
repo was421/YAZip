@@ -71,6 +71,10 @@ namespace YAZip
                 hashable = '/' + hashable;
             return hashable.Aggregate(0u, (i, c) => i * PRIME + c);
         }
+        public static uint ComputeFileHash(byte[] bytes)
+        {
+            return bytes.Aggregate(0u, (i, c) => i * PRIME + c);
+        }
     }
 
 }

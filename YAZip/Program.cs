@@ -15,7 +15,7 @@ namespace YAZip
         {
 
             // old
-            //args = new string[] { @"C:\Users\Tor\source\repos\YAZip - FS Version\YAZip\bin\Debug\DARK SOULS PREPARE TO DIE EDITION" };
+            //args = new string[] {"-DS3Comply","-NoPass",@"E:\Steam\steamapps\common\DARK SOULS III\Game_Archthrones\archthrones\_archthrones"};
 
             if (args.Length == 0)
             {
@@ -34,17 +34,29 @@ namespace YAZip
             var watch = new System.Diagnostics.Stopwatch();
             watch.Start();
             Progress = new Progress<(double value, string status)>(ProgressReport);
-
+            bool ds3comply = false;
+            bool no_password = false;
             foreach (var arg in args)
             {
                 if (arg.StartsWith("-"))
                 {
-                    bool ds3comply = arg.Equals("-DS3Comply");
-                    Settings.Instance.ds3comply = ds3comply;
-                    if (ds3comply)
-                        Console.WriteLine("Using DS3 Compliant Mode");
-                    continue;
+                    if (!ds3comply)
+                    {
+                        ds3comply = arg.Equals("-DS3Comply");
+                        Settings.Instance.ds3comply = ds3comply;
+                        if (ds3comply)
+                            Console.WriteLine("Using DS3 Compliant Mode");
+                    }
+                    if (!no_password)
+                    {
+                        no_password = arg.Equals("-NoPass");
+                    }
                 }
+            }
+
+            foreach (var arg in args)
+            {
+                if (arg.StartsWith("-")) { continue; }
 
                 var writePath = Directory.GetParent(arg).ToString();
                 string error;
@@ -53,11 +65,14 @@ namespace YAZip
 
                 if ((attr & FileAttributes.Directory) == FileAttributes.Directory)
                 {
-                    var encryptBHD = Confirm("Would you like to password protect these files?");
-                    if (encryptBHD)
+                    if (!no_password)
                     {
-                        Console.Write("Please choose a password: ");
-                        password = Console.ReadLine();
+                        var encryptBHD = Confirm("Would you like to password protect these files?");
+                        if (encryptBHD)
+                        {
+                            Console.Write("Please choose a password: ");
+                            password = Console.ReadLine();
+                        }
                     }
 
                     error = Packer.Pack(arg, writePath, password, Progress);
